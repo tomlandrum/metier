@@ -5,24 +5,47 @@ on:
     branches:
       - master
       - '*-release'
+      - action-test
 
 jobs:
   build:
     strategy:
       matrix:
-        platform: [macos-10.15]
+        platform: [macos-10.15, windows-2019]
         include:
           - platform: 'macos-10.15'
             vcpkg_triplet: 'x64-osx'
             cmake_extra: ''
             artifact_ext: '.dmg'
             release_artifacts: '*.dmg'
+          - platform: 'windows-2019'
+            vcpkg_triplet: 'x64-windows-static'
+            cmake_extra: ''
+            artifact_ext: '.exe'
+            release_artifacts: '*.exe'
     runs-on: ${{ matrix.platform }}
     steps:
     - uses: actions/checkout@v2
       with:
         fetch-depth: '0'
         submodules: 'recursive'
+    - name: Get more diskspace (windows)
+      if: matrix.platform == 'windows-2019'
+      run: |
+        Stop-Service -Force -Name "MongoDB"
+        Write-Host $err
+
+        Remove-Item "$Env:Programfiles\dotnet" -Recurse -Force -ErrorAction Continue -ErrorVariable err
+        Write-Host $err
+
+        Remove-Item "$Env:Programfiles\LLVM" -Recurse -Force -ErrorAction Continue -ErrorVariable err
+        Write-Host $err
+
+        Remove-Item "$Env:Programfiles\Azure Cosmos DB Emulator" -Recurse -Force -ErrorAction Continue -ErrorVariable err
+        Write-Host $err
+            
+        Remove-Item "$Env:Programfiles\MongoDB" -Recurse -Force -ErrorAction Continue -ErrorVariable err
+        Write-Host $err
     - name: Install extra dependencies
       if: matrix.platform == 'macos-10.15'
       run: brew install automake
@@ -62,7 +85,16 @@ jobs:
       uses: lukka/run-vcpkg@v7
       with:
         vcpkgArguments: '--triplet ${{ matrix.vcpkg_triplet }} --overlay-ports=${{ github.workspace }}/deps/opentxs/vcpkg/ports --overlay-triplets=${{ github.workspace }}/deps/opentxs/vcpkg/triplets @${{ github.workspace }}/deps/vcpkg.qml.txt'
-        vcpkgDirectory: '${{ github.workspace }}/deps/vcpkg'
+        vcpkgDirectory: '${{ github.workspace }}/deps/v'
+        vcpkgGitCommitId: a6ce2965b5725a6395fa587ad456105fc3412e4a
+    - name: Get error logs
+      if: ${{ failure() }}
+      uses: actions/upload-artifact@v2
+      with:
+        name: output-log
+        path: |
+         ${{ github.workspace }}\deps\v\buildtrees\qt5-declarative\package-build-x64-windows-static-dbg-out.log
+         ${{ github.workspace }}\deps\v\buildtrees\qt5-declarative\package-build-x64-windows-static-dbg-err.log         
     - name: Compile
       uses: lukka/run-cmake@v3
       with:
@@ -116,7 +148,7 @@ jobs:
       with:
         allowUpdates: true
         artifacts: ${{ matrix.release_artifacts }}
-        commit: pkt-release
+        commit: action-test
         tag: ${{ env.release_version }}
         token: ${{ secrets.GITHUB_TOKEN }}
         
